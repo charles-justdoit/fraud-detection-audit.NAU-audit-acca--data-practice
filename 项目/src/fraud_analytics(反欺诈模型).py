@@ -274,6 +274,48 @@ lg_m=smf.logit(formula=formula3,data=train_sample).fit(method="bfgs",maxiter=300
 lg_m.summary()
 # 出现大量NAN值,Pseudo R-squ=0.9123，说明category和state变量对is_fraud变量是显著性影响变量,但会发现shopping_net,shopping_pops的coef值极高,属于极端值,经查询资料,本次出现了准分离问题，日后需要进行相关极端值处理。(本部分结合CDA2级教程p221页,但由于出现了大量NAN值,经查询,属于完全准分离暂时忽略,优先考虑Pseudo R-squ)
 
+# 结合CDA二级教程思路及框架(具体为8.5.2逻辑回归模型最后部分中),接下来针对自变量的多重共线性使用方差膨胀因子进行分析
+# 方差膨胀因子检验(自定义函数借鉴引用CDA2级教程P222,个人进行相关注释及原理补充)
+def vif(df,col_i):
+    from statsmodels.formula.api import ols
+    cols=list(df.columns)#取出所有类名
+    cols.remove(col_i)#移除要计算VIF的变量
+    cols_noti=cols#剩余类作为自变量
+    formul=col_i+"~"+"+".join(cols_noti)#构建回归公式 当前类~其他列
+    r2=ols(formul,df).fit().rsquared##拟合线性回归并获取R**2
+    return 1/(1-r2)#代入公式VIF=1/(1-R**2),计算VIF
+# 经查询资料,补充方差膨胀因子(VIF)压原理:
+# 将每个自变量依次作为因变量,对其他自变量作线性回归,得到R**2,再用公式VIF=1/(1-R**2)进行计算
+# VIF阀值参考:
+# VIF<5 :共线性极弱,可忽略
+# 5<=VIF<=10:存在一定共线性,需要关注
+# VIF》10:存在严重共线性,必须处理(如删除变量,PCA降维)
+
+# 继续根据CDA2级教程思路运用自定义函数,对本数据集中连续变量进行方差膨胀因子的计算
+# 定义连续变量列表
+candidates=["amt","lat","long","merch_long","merch_lat","city_pop"]
+# 提取列表目标变量,删除目标变量is_fraud
+# exog=train[candidates].drop(["is-fraud"],axis=1)
+# 第一次运行上行,由于is_fraud列本身不在category里,故出现报错,经查询资料后进行相关修改
+exog=train[candidates]
+for i in exog.columns:
+    print(i,"/t",vif(df=exog,col_i=i))
+# 运行后出现了大量报错提醒,查询资料并结合CDA2级6.3.7连续变量中心标准化思路使用特征标准化
+scaler=StandardScaler()
+exog_scaled=pd.DataFrame(scaler.fit_transform(exog.values),columns=exog.columns)
+# 再次计算VIF(方差膨胀因子)
+print(i,"/t",vif(df=exog,col_i=i))
+# 根据生成的分析结果及查询资料得:
+# lat，long,merch_long,merch_lat值过大,说明具有严重的多重共线性问题
+# amt,city_pop的VIF值小于5,共线性极小,可忽略
+
+#根据CDA2级教材思路(此处复现CDA2级教程框架p223),接下来使用predict函数进行预测
+train["proba"]=lg_m.predict(exog_scaled)
+test["proba"]=lg_m.predict(exog_scaled)
+test[["is_fraud","proba"]].head()
+# 此处报错,与原formula4中state变量冲突,此处暂时搁置,后来版本进行优化更新
+
+
 
 
 
